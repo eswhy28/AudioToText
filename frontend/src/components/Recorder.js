@@ -12,7 +12,6 @@ const Recorder = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [previousTranscriptions, setPreviousTranscriptions] = useState([]);
   
-  // Enhanced state for duration and waveform
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [audioContext, setAudioContext] = useState(null);
   const [analyser, setAnalyser] = useState(null);
@@ -77,11 +76,9 @@ const Recorder = () => {
       }
       setWaveformData(downsampledData);
 
-      // Clear canvas
       canvasCtx.fillStyle = 'rgba(255, 255, 255, 0.1)';
       canvasCtx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      // Draw waveform
       canvasCtx.lineWidth = 2;
       canvasCtx.strokeStyle = 'rgb(0, 123, 255)';
       canvasCtx.beginPath();
@@ -109,10 +106,35 @@ const Recorder = () => {
   };
 
   const startRecording = async () => {
-    if (isLoading) return; // Prevent recording while processing
-
+    if (isLoading) return; 
+  
+    // Normalize getUserMedia across different browser implementations
+    const getUserMedia = 
+      navigator.mediaDevices?.getUserMedia || 
+      navigator.getUserMedia || 
+      navigator.webkitGetUserMedia || 
+      navigator.mozGetUserMedia;
+  
+    if (!getUserMedia) {
+      alert("Your browser does not support microphone access.");
+      return;
+    }
+  
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Use the most compatible method for getting user media
+      const stream = await (
+        navigator.mediaDevices?.getUserMedia 
+          ? navigator.mediaDevices.getUserMedia({ audio: true })
+          : new Promise((resolve, reject) => {
+              getUserMedia.call(
+                navigator, 
+                { audio: true }, 
+                resolve, 
+                reject
+              );
+            })
+      );
+      
       const recorder = new MediaRecorder(stream);
       
       // Setup audio context for visualization
@@ -134,11 +156,9 @@ const Recorder = () => {
       setAudioContext(context);
       setAnalyser(analyser);
       setAudioStream(stream);
-
-      // Reset duration
+  
       setRecordingDuration(0);
-
-      // Start duration tracking
+  
       durationIntervalRef.current = setInterval(() => {
         setRecordingDuration((prev) => {
           if (prev >= MAX_RECORDING_TIME) {
@@ -148,16 +168,15 @@ const Recorder = () => {
           return prev + 1;
         });
       }, 1000);
-
+  
       recorder.start();
       setIsRecording(true);
       setAudioChunks([]);
-
-      // Start visualization
+  
       visualizeAudio();
     } catch (err) {
-      console.error("Error accessing microphone:", err);
-      alert("Could not access microphone. Please check permissions.");
+      console.error("Microphone access error:", err);
+      alert(`Could not access microphone. Error: ${err.message}`);
     }
   };
 
@@ -170,25 +189,25 @@ const Recorder = () => {
 
   const uploadAudio = async () => {
     if (audioChunks.length === 0 || isLoading) return;
-
+  
     const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
     const formData = new FormData();
     formData.append("file", audioBlob, "recording.wav");
-
+  
     setIsLoading(true);
-
+  
     try {
-      const response = await fetch("http://localhost:5000/api/transcribe", {
+      const response = await fetch("/api/transcribe", {
         method: "POST",
         body: formData,
       });
       
       const result = await response.json();
-
+  
       if (response.ok) {
         const newTranscription = result.transcription || "No transcription available";
         setTranscription(newTranscription);
-
+  
         // Save transcription to local storage
         const updatedTranscriptions = [
           { 
